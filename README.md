@@ -4,6 +4,8 @@ Sniping tool for Albion Online: spot undervalued gear on city markets and flip i
 
 **Live demo:** [cutshardpro-lgtm.github.io/albion-city-buy-list](https://cutshardpro-lgtm.github.io/albion-city-buy-list)
 
+> Top Traded works directly online. Sniper (live feed) requires local setup — browser security blocks `ws://` from an `https://` page. See the Setup tab in the app.
+
 ---
 
 ## What it does
