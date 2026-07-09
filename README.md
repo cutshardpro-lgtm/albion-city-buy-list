@@ -58,7 +58,7 @@ margin = BM_buy_price * (1 - tax%) - city_price - city_price * fee%
 pipeline/
   fetch.py       — downloads ao-bin-dumps metadata + AODP history/prices (cached)
   compute.py     — extracts T4+ gear, computes volume-weighted averages
-  build_data.py  — entry point; outputs app/data/baseline.json
+  build_data.py  — entry point; outputs docs/data/baseline.json
 ```
 
 Baseline is refreshed automatically twice daily via GitHub Actions (`.github/workflows/baseline.yml`).
