@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>City Buy List - Albion Online market sniper</title>
+<style>
+  :root {
+    --bg: #0f1318; --panel: #161c24; --panel2: #1c2430; --border: #2a3442;
+    --text: #d7dee8; --dim: #7d8b9d; --accent: #4fc3f7; --good: #6fdd8b;
+    --bad: #ef6a6a; --warn: #e8c268; --hl: #12301c;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.45 "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 12px;
+           padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--border); }
+  header h1 { font-size: 17px; margin: 0; letter-spacing: .4px; }
+  header .sub { color: var(--dim); font-size: 12px; }
+  .chip { padding: 2px 10px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+  .chip.ok   { background: #143d21; color: var(--good); }
+  .chip.off  { background: #3d1414; color: var(--bad); }
+  .chip.wait { background: #3d3214; color: var(--warn); }
+  nav { display: flex; gap: 4px; margin-left: auto; }
+  nav button { background: var(--panel2); color: var(--dim); border: 1px solid var(--border);
+               padding: 6px 14px; border-radius: 6px; cursor: pointer; font-weight: 600; }
+  nav button.active { color: var(--accent); border-color: var(--accent); }
+  main { padding: 12px 16px 60px; max-width: 1500px; margin: 0 auto; }
+  .bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+         background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+         padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+  .bar label { color: var(--dim); display: flex; align-items: center; gap: 5px; }
+  .bar input[type=number], .bar input[type=text], .bar select {
+    background: var(--bg); color: var(--text); border: 1px solid var(--border);
+    border-radius: 5px; padding: 4px 7px; font-size: 13px; }
+  .bar input[type=number] { width: 70px; }
+  .bar input[type=text].search { width: 170px; }
+  .hyp { color: var(--warn); font-size: 11px; cursor: help; border-bottom: 1px dotted var(--warn); }
+  button.act { background: var(--accent); border: 0; color: #05222f; font-weight: 700;
+               padding: 5px 14px; border-radius: 6px; cursor: pointer; }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--dim);
+                 padding: 5px 12px; border-radius: 6px; cursor: pointer; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel);
+          border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: .6px;
+       color: var(--dim); padding: 7px 9px; border-bottom: 1px solid var(--border);
+       background: var(--panel2); position: sticky; top: 0; }
+  td { padding: 5px 9px; border-bottom: 1px solid #1d242e; font-variant-numeric: tabular-nums; }
+  tr.deal { background: var(--hl); }
+  tr.nobase td { color: var(--dim); }
+  td.r, th.r { text-align: right; }
+  .age { display: inline-block; min-width: 38px; text-align: center; padding: 1px 6px;
+         border-radius: 8px; background: var(--panel2); font-size: 12px; }
+  .age.fresh { background: #143d21; color: var(--good); }
+  img.ico { width: 34px; height: 34px; vertical-align: middle; }
+  .q { font-size: 10px; color: var(--dim); margin-left: 4px; }
+  .pos { color: var(--good); } .neg { color: var(--bad); }
+  .muted { color: var(--dim); }
+  .note { color: var(--dim); font-size: 12px; margin: 8px 2px; }
+  .setup { max-width: 860px; }
+  .setup h2 { color: var(--accent); font-size: 16px; margin: 22px 0 8px; }
+  .setup pre { background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+               padding: 12px; overflow-x: auto; position: relative; }
+  .setup li { margin: 6px 0; }
+  .copybtn { position: absolute; top: 8px; right: 8px; }
+  footer { position: fixed; bottom: 0; left: 0; right: 0; background: var(--panel);
+           border-top: 1px solid var(--border); padding: 6px 16px; font-size: 12px;
+           color: var(--dim); display: flex; gap: 16px; flex-wrap: wrap; }
+  footer a { color: var(--accent); text-decoration: none; }
+  @media (max-width: 900px) { .live-only { display: none; } }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>City Buy List</h1>
+  <span class="sub">buy under average in town, sell to the Black Market NPC</span>
+  <span id="feedChip" class="chip off">FEED OFF</span>
+  <span id="baseChip" class="chip wait">BASELINE ...</span>
+  <nav>
+    <button id="tabSniper" class="active">Sniper</button>
+    <button id="tabTop">Top Traded @ BM</button>
+    <button id="tabSetup">Setup</button>
+  </nav>
+</header>
+
+<main>
+
+<!-- ============================ SNIPER ============================ -->
+<section id="viewSniper">
+  <div class="bar">
+    <input type="text" id="wsUrl" value="ws://localhost:8099/ws" size="24">
+    <button class="act" id="btnConnect">Connect</button>
+    <button class="ghost" id="btnDisconnect">Disconnect</button>
+    <label><input type="checkbox" id="autoRe" checked> auto-reconnect</label>
+    <span id="feedDetail" class="muted">not connected - see Setup</span>
+  </div>
+  <div class="bar">
+    <label>avg window
+      <select id="avgWin"><option value="a7" selected>7 days</option><option value="a30">30 days</option></select>
+    </label>
+    <label>BM sales tax %
+      <input type="number" id="taxPct" value="4.0" step="0.5" min="0" max="20">
+      <span class="hyp" title="HYPOTHESIS - 4% with premium, 8% without is the commonly cited value. Verify on the Black Market sell screen and correct here.">HYP</span>
+    </label>
+    <label>order setup fee %
+      <input type="number" id="feePct" value="0" step="0.5" min="0" max="10">
+      <span class="hyp" title="HYPOTHESIS - default 0 assumes you instant-sell into an existing BM buy order. If you place sell orders instead, the commonly cited fee is 2.5%. Verify in game.">HYP</span>
+    </label>
+  </div>
+  <div class="bar">
+    <label>min BM vol/day <input type="number" id="fVol" value="10" min="0"></label>
+    <label>tier <select id="fTier"><option value="">all</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+    <label>enchant <select id="fEnch"><option value="">all</option><option>0</option><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+    <label>category <select id="fCat"><option value="">all</option></select></label>
+    <label><input type="checkbox" id="fNoArte"> hide artefact items</label>
+    <label>search <input type="text" id="fSearch" class="search" placeholder="item name..."></label>
+    <label><input type="checkbox" id="fDealsOnly"> deals only</label>
+    <button class="ghost" id="btnClear">Clear list</button>
+  </div>
+  <table>
+    <thead><tr>
+      <th>age</th><th></th><th>item</th><th class="live-only">city</th>
+      <th class="r">live price</th><th class="r">avg <span id="winLbl">7d</span></th>
+      <th class="r">gap</th><th class="r">BM buy</th><th class="r">net margin</th>
+      <th class="r">BM vol/day</th>
+    </tr></thead>
+    <tbody id="rows"><tr><td colspan="10" class="muted" style="padding:24px">
+      Waiting for the feed. Connect, then browse the market in game - fresh orders appear here as you browse.
+    </td></tr></tbody>
+  </table>
+  <p class="note">Buffer keeps the last 500 distinct orders. Highlighted rows: live price below average AND positive net margin.
+     Net margin = BM buy price x (1 - tax) - live price - setup fee. This tool never plays sounds or sends notifications.</p>
+</section>
+
+<!-- ============================ TOP TRADED ============================ -->
+<section id="viewTop" style="display:none">
+  <div class="bar">
+    <label>tier <select id="tTier"><option value="">all</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></label>
+    <label>category <select id="tCat"><option value="">all</option></select></label>
+    <label>search <input type="text" id="tSearch" class="search" placeholder="item name..."></label>
+    <span class="muted">ranked by daily silver traded at the Black Market (7-day mean) - top 100</span>
+  </div>
+  <table>
+    <thead><tr>
+      <th>#</th><th></th><th>item</th><th class="r">daily amount</th>
+      <th class="r">avg price 7d</th><th class="r">daily silver</th><th class="r">best BM buy now</th>
+    </tr></thead>
+    <tbody id="topRows"><tr><td colspan="7" class="muted" style="padding:24px">Loading baseline...</td></tr></tbody>
+  </table>
+  <p class="note">Use this to decide what to accumulate. BM buy orders are finite: spreading purchases across many
+     high-volume items beats dumping one stack of a single item.</p>
+</section>
+
+<!-- ============================ SETUP ============================ -->
+<section id="viewSetup" style="display:none" class="setup">
+  <h2>1. Install the official Albion Data Client (once)</h2>
+  <ol>
+    <li>Download the latest release: <a href="https://github.com/ao-data/albiondata-client/releases" target="_blank" rel="noopener">github.com/ao-data/albiondata-client/releases</a></li>
+    <li>Npcap is required (the installer offers it).</li>
+    <li>This is the same client thousands of players run to feed the public price database.
+        This tool is read-only: your public upload keeps running untouched.</li>
+  </ol>
+
+  <h2>2. Enable the local websocket</h2>
+  <p>Create a file named <code>config.yaml</code> <b>in the same folder as albiondata-client.exe</b> with exactly:</p>
+  <pre id="cfgBlock">EnableWebsockets: true
+AllowedWebsocketHosts:
+  - localhost
+  - 127.0.0.1<button class="ghost copybtn" onclick="copyCfg()">Copy</button></pre>
+  <p>Then <b>restart the client</b>. The config is read once at startup.</p>
+
+  <h2>3. Verify</h2>
+  <ol>
+    <li>Open this page, click <b>Connect</b> on the Sniper tab. The badge turns green.</li>
+    <li>In game, open any city market and browse item pages.</li>
+    <li>Orders appear in the Sniper list as you browse. Not magic, not real-time:
+        the list updates <i>as you browse</i> - what your game shows is what the tool sees.</li>
+  </ol>
+
+  <h2>Troubleshooting (every item below was hit for real while building this)</h2>
+  <ul>
+    <li><b>"request origin not allowed by Upgrader.CheckOrigin"</b> in the client window:
+        the client did not read your config.yaml.
+        <ul>
+          <li>Launch <code>albiondata-client.exe</code> by double-clicking the exe itself,
+              <b>not a shortcut</b>. Shortcuts (and "Run as administrator" on shortcuts) change the
+              startup folder, and the client looks for config.yaml in the startup folder.</li>
+          <li>Save config.yaml as plain UTF-8 without BOM, Unix line endings if possible. Avoid
+              PowerShell <code>Set-Content</code>/<code>Out-File</code>: their default encodings can
+              silently corrupt the values.</li>
+          <li>Restart the client after any config change.</li>
+        </ul></li>
+    <li><b>Badge stays red</b>: the client is not running, or EnableWebsockets was not read
+        (no config file = websockets silently off, no error shown).</li>
+    <li><b>Connected but no orders</b>: browse the market in game - the feed only carries what your
+        game client displays. Admin rights are NOT needed.</li>
+    <li><b>Player position updates but no market orders</b>: on brand-new or long-inactive accounts
+        market orders can be encrypted (gold prices and history still pass). Playing normally
+        unlocks it over time.</li>
+    <li><b>VPN users</b>: set the VPN adapter to NDIS/Legacy mode so Npcap can see the traffic.</li>
+    <li><b>Page opened as file://</b>: the client rejects it (null origin). Serve the page over
+        http (any local server) or use the hosted version.</li>
+  </ul>
+
+  <h2>Privacy</h2>
+  <p>The live feed goes from the client on your machine straight into your browser tab. Nothing is
+     sent to any server of ours - there is no server of ours. Baseline averages are public data from
+     <a href="https://albion-online-data.com" target="_blank" rel="noopener">albion-online-data.com</a>.</p>
+</section>
+
+</main>
+
+<footer>
+  <span>A tool by the <a href="https://www.youtube.com/@Cutshard" target="_blank" rel="noopener">Cutshard</a> creator</span>
+  <span>Not affiliated with Sandbox Interactive. Read-only tool built on the official
+        <a href="https://github.com/ao-data/albiondata-client" target="_blank" rel="noopener">albiondata-client</a>.</span>
+  <span id="baseInfo"></span>
+</footer>
+
+<script>
+"use strict";
+/* ============================ constants ============================ */
+const LOCATIONS = {
+  "0000":"Thetford","0007":"Thetford Market","1000":"Lymhurst","1002":"Lymhurst Market",
+  "2000":"Bridgewatch","2004":"Bridgewatch Market","3003":"Caerleon","3005":"Caerleon Market",
+  "3004":"Martlock","3008":"Martlock Market","4000":"Fort Sterling","4002":"Fort Sterling Market",
+  "5000":"Brecilien","5003":"Brecilien Market",
+  "0301":"Thetford Portal","1301":"Lymhurst Portal","2301":"Bridgewatch Portal",
+  "3301":"Martlock Portal","4301":"Fort Sterling Portal"
+};
+const QNAMES = {1:"Normal",2:"Good",3:"Outstanding",4:"Excellent",5:"Masterpiece"};
+const BUFFER_CAP = 500;
+
+/* ============================ state ============================ */
+let baseline = null;          // baseline.json content
+let ws = null, wantOpen = false, reTimer = null;
+let orders = new Map();       // orderId -> row object (insertion order = arrival order)
+let renderQueued = false;
+
+const $ = id => document.getElementById(id);
+
+/* ============================ tabs ============================ */
+const tabs = {Sniper: $("tabSniper"), Top: $("tabTop"), Setup: $("tabSetup")};
+const views = {Sniper: $("viewSniper"), Top: $("viewTop"), Setup: $("viewSetup")};
+for (const k of Object.keys(tabs)) tabs[k].onclick = () => {
+  for (const j of Object.keys(tabs)) {
+    tabs[j].classList.toggle("active", j === k);
+    views[j].style.display = j === k ? "" : "none";
+  }
+  if (k === "Top") renderTop();
+};
+
+/* ============================ baseline ============================ */
+fetch("data/baseline.json").then(r => {
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}).then(d => {
+  baseline = d;
+  $("baseChip").textContent = "BASELINE " + d.server.toUpperCase();
+  $("baseChip").className = "chip ok";
+  const age = (Date.now() - Date.parse(d.generated_at)) / 3.6e6;
+  $("baseInfo").textContent = `baseline built ${d.generated_at} (${age.toFixed(1)}h ago), ` +
+    Object.keys(d.items).length + " items";
+  if (age > 24) { $("baseChip").className = "chip wait"; $("baseChip").textContent += " (STALE)"; }
+  fillCategoryFilters();
+  renderTop();
+  scheduleRender();
+}).catch(e => {
+  $("baseChip").textContent = "NO BASELINE";
+  $("baseChip").className = "chip off";
+  $("baseInfo").textContent = "baseline.json missing (" + e.message + ") - run the pipeline; live view still works, every row will say 'no baseline'";
+});
+
+function fillCategoryFilters() {
+  const cats = [...new Set(Object.values(baseline.items).map(i => i.cat))].sort();
+  for (const sel of [$("fCat"), $("tCat")])
+    for (const c of cats) {
+      const o = document.createElement("option"); o.value = c; o.textContent = c;
+      sel.appendChild(o);
+    }
+}
+
+/* ============================ websocket ============================ */
+function setFeed(cls, chip, detail) {
+  $("feedChip").className = "chip " + cls; $("feedChip").textContent = chip;
+  const d = $("feedDetail");
+  d.textContent = "";
+  d.append(detail + " ");
+  if (cls !== "ok") {
+    const a = document.createElement("a");
+    a.href = "#"; a.textContent = "Setup guide"; a.style.color = "var(--accent)";
+    a.onclick = e => { e.preventDefault(); tabs.Setup.click(); };
+    d.append(a);
+  }
+}
+function connect() {
+  if (ws) try { ws.close(); } catch (e) {}
+  wantOpen = true;
+  let sock;
+  try { sock = new WebSocket($("wsUrl").value.trim()); }
+  catch (e) { setFeed("off", "FEED OFF", "bad url: " + e.message); return; }
+  ws = sock;
+  setFeed("wait", "CONNECTING", "connecting...");
+  sock.onopen = () => setFeed("wait", "WAITING", "connected - browse the market in game");
+  sock.onmessage = ev => { for (const part of String(ev.data).split("\n")) handleMsg(part); };
+  sock.onclose = () => {
+    if (ws !== sock) return;
+    setFeed("off", "FEED OFF", "disconnected" + (wantOpen && $("autoRe").checked ? " - retrying in 3s (is albiondata-client running? see Setup)" : ""));
+    if (wantOpen && $("autoRe").checked) { clearTimeout(reTimer); reTimer = setTimeout(connect, 3000); }
+  };
+  sock.onerror = () => {};
+}
+$("btnConnect").onclick = connect;
+$("btnDisconnect").onclick = () => { wantOpen = false; clearTimeout(reTimer); if (ws) ws.close(); };
+connect();
+
+function handleMsg(text) {
+  text = text.trim();
+  if (!text) return;
+  let msg;
+  try { msg = JSON.parse(text); } catch (e) { return; }
+  if (msg.topic !== "marketorders.ingest") return;
+  const list = msg.data && msg.data.Orders;
+  if (!Array.isArray(list)) return;
+  const now = Date.now();
+  let added = 0;
+  for (const o of list) {
+    if (o.AuctionType !== "offer") continue;         // sell orders only
+    if (orders.has(o.Id)) continue;                  // dedupe, keep first-seen time
+    orders.set(o.Id, {
+      id: o.Id, item: o.ItemTypeId, q: o.QualityLevel || 1,
+      price: Math.round(o.UnitPriceSilver / 10000),  // PROVEN x10000 (gate 09/07)
+      amount: o.Amount, loc: String(o.LocationId), seen: now
+    });
+    added++;
+  }
+  while (orders.size > BUFFER_CAP) orders.delete(orders.keys().next().value);
+  if (added) {
+    setFeed("ok", "LIVE", "receiving orders as you browse (" + orders.size + " in buffer)");
+    scheduleRender();
+  }
+}
+
+/* ============================ sniper render ============================ */
+for (const id of ["avgWin","taxPct","feePct","fVol","fTier","fEnch","fCat","fNoArte","fSearch","fDealsOnly"])
+  $(id).addEventListener("input", scheduleRender);
+$("btnClear").onclick = () => { orders.clear(); scheduleRender(); };
+
+function scheduleRender() {
+  if (renderQueued) return;
+  renderQueued = true;
+  setTimeout(() => { renderQueued = false; renderSniper(); }, 200);
+}
+
+function lookup(itemId, q) {
+  if (!baseline) return {state: "no baseline (baseline not loaded)"};
+  const it = baseline.items[itemId];
+  if (!it) return {state: "no baseline (not T4+ gear)"};
+  const slot = it.q && it.q[String(q)];
+  if (!slot) return {it, state: "no baseline (no BM data for this quality)"};
+  return {it, slot, state: "ok"};
+}
+
+function fmt(n) { return n == null ? "-" : n.toLocaleString("en-US"); }
+
+function renderSniper() {
+  const win = $("avgWin").value;
+  $("winLbl").textContent = win === "a7" ? "7d" : "30d";
+  const tax = (parseFloat($("taxPct").value) || 0) / 100;
+  const fee = (parseFloat($("feePct").value) || 0) / 100;
+  const minVol = parseFloat($("fVol").value) || 0;
+  const fTier = $("fTier").value, fEnch = $("fEnch").value, fCat = $("fCat").value;
+  const noArte = $("fNoArte").checked, dealsOnly = $("fDealsOnly").checked;
+  const search = $("fSearch").value.trim().toLowerCase();
+
+  const rows = [];
+  const list = [...orders.values()].reverse();       // newest first
+  for (const o of list) {
+    const {it, slot, state} = lookup(o.item, o.q);
+    if (it) {
+      if (fTier && String(it.tier) !== fTier) continue;
+      if (fEnch && String(it.ench) !== fEnch) continue;
+      if (fCat && it.cat !== fCat) continue;
+      if (noArte && it.artefact) continue;
+      if (search && !(it.name.toLowerCase().includes(search) || o.item.toLowerCase().includes(search))) continue;
+    } else if (search && !o.item.toLowerCase().includes(search)) continue;
+
+    let avg = null, gap = null, margin = null, vol = null, bmBuy = null, deal = false;
+    if (state === "ok") {
+      avg = slot[win] ?? null;
+      vol = slot.vol7 ?? null;
+      bmBuy = slot.bm_buy ?? null;
+      if (vol != null && vol < minVol) continue;
+      if (avg) gap = o.price / avg - 1;
+      if (bmBuy != null) margin = Math.round(bmBuy * (1 - tax) - o.price - o.price * fee);
+      deal = avg != null && o.price < avg && margin != null && margin > 0;
+    } else if (dealsOnly) continue;  // no-baseline rows stay visible (grey) per spec; only "deals only" hides them
+    if (dealsOnly && !deal) continue;
+
+    rows.push({o, it, state, avg, gap, margin, vol, bmBuy, deal});
+    if (rows.length >= BUFFER_CAP) break;
+  }
+
+  const tb = $("rows");
+  if (!rows.length) {
+    tb.innerHTML = '<tr><td colspan="10" class="muted" style="padding:24px">' +
+      (orders.size ? "Nothing matches the filters (buffer holds " + orders.size + " orders)."
+                   : "Waiting for the feed. Connect, then browse the market in game.") + "</td></tr>";
+    return;
+  }
+  tb.innerHTML = rows.map(r => {
+    const name = r.it ? r.it.name : r.o.item;
+    const qtag = `<span class="q">Q${r.o.q} ${QNAMES[r.o.q] || ""}${r.it && r.it.ench ? " ." + r.it.ench : ""}</span>`;
+    const loc = LOCATIONS[r.o.loc] || (r.o.loc.includes("@") ? "Smuggler's Den" : r.o.loc);
+    const gapTxt = r.gap == null ? '<span class="muted">-</span>'
+      : `<span class="${r.gap < 0 ? "pos" : "neg"}">${(r.gap * 100).toFixed(1)}%</span>`;
+    const mgTxt = r.margin == null ? '<span class="muted">-</span>'
+      : `<span class="${r.margin > 0 ? "pos" : "neg"}">${fmt(r.margin)}</span>`;
+    const base = r.state === "ok" ? fmt(r.avg)
+      : `<span class="muted" title="${r.state}">${r.state.replace("no baseline ", "no baseline<br>")}</span>`;
+    return `<tr class="${r.deal ? "deal" : ""} ${r.state !== "ok" ? "nobase" : ""}">
+      <td><span class="age" data-ts="${r.o.seen}">0s</span></td>
+      <td><img class="ico" loading="lazy" src="https://render.albiononline.com/v1/item/${r.o.item}.png?quality=${r.o.q}&size=64" alt=""></td>
+      <td>${name}${qtag}${r.o.amount > 1 ? ' <span class="q">x' + r.o.amount + "</span>" : ""}</td>
+      <td class="live-only">${loc}</td>
+      <td class="r">${fmt(r.o.price)}</td>
+      <td class="r">${base}</td>
+      <td class="r">${gapTxt}</td>
+      <td class="r">${fmt(r.bmBuy)}</td>
+      <td class="r">${mgTxt}</td>
+      <td class="r">${fmt(r.vol)}</td>
+    </tr>`;
+  }).join("");
+}
+
+/* live age badges, one cheap timer */
+setInterval(() => {
+  const now = Date.now();
+  for (const el of document.querySelectorAll(".age[data-ts]")) {
+    const s = Math.floor((now - +el.dataset.ts) / 1000);
+    el.textContent = s < 60 ? s + "s" : Math.floor(s / 60) + "m" + (s % 60) + "s";
+    el.classList.toggle("fresh", s < 30);
+  }
+}, 1000);
+
+/* ============================ top traded ============================ */
+for (const id of ["tTier","tCat","tSearch"]) $(id).addEventListener("input", renderTop);
+
+function renderTop() {
+  const tb = $("topRows");
+  if (!baseline) { tb.innerHTML = '<tr><td colspan="7" class="muted" style="padding:24px">baseline.json missing - run the pipeline.</td></tr>'; return; }
+  const fTier = $("tTier").value, fCat = $("tCat").value;
+  const search = $("tSearch").value.trim().toLowerCase();
+  const agg = [];
+  for (const [id, it] of Object.entries(baseline.items)) {
+    if (!it.q) continue;
+    if (fTier && String(it.tier) !== fTier) continue;
+    if (fCat && it.cat !== fCat) continue;
+    if (search && !it.name.toLowerCase().includes(search) && !id.toLowerCase().includes(search)) continue;
+    let vol = 0, silver = 0, bestBuy = null;
+    for (const s of Object.values(it.q)) {
+      if (s.vol7 && s.a7) { vol += s.vol7; silver += s.vol7 * s.a7; }
+      if (s.bm_buy != null && (bestBuy == null || s.bm_buy > bestBuy)) bestBuy = s.bm_buy;
+    }
+    if (!vol) continue;
+    agg.push({id, it, vol, silver, avg: Math.round(silver / vol), bestBuy});
+  }
+  agg.sort((a, b) => b.silver - a.silver);
+  tb.innerHTML = agg.slice(0, 100).map((r, i) => `<tr>
+    <td>${i + 1}</td>
+    <td><img class="ico" loading="lazy" src="https://render.albiononline.com/v1/item/${r.id}.png?size=64" alt=""></td>
+    <td>${r.it.name}<span class="q">T${r.it.tier}${r.it.ench ? "." + r.it.ench : ""}${r.it.artefact ? " artefact" : ""}</span></td>
+    <td class="r">${fmt(r.vol)}</td>
+    <td class="r">${fmt(r.avg)}</td>
+    <td class="r">${fmt(Math.round(r.silver))}</td>
+    <td class="r">${fmt(r.bestBuy)}</td>
+  </tr>`).join("") || '<tr><td colspan="7" class="muted" style="padding:24px">No items match.</td></tr>';
+}
+
+/* ============================ setup ============================ */
+function copyCfg() {
+  navigator.clipboard.writeText("EnableWebsockets: true\nAllowedWebsocketHosts:\n  - localhost\n  - 127.0.0.1\n");
+}
+</script>
+</body>
+</html>

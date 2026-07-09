@@ -1,0 +1,15 @@
+# City Buy List - config websocket du client officiel albiondata-client
+# Emplacement : copier ce fichier config.yaml dans le dossier de albiondata-client.exe
+# (exactement : le dossier de demarrage du process ; si lancement par raccourci Windows,
+#  verifier le champ "Demarrer dans" du raccourci).
+# Cles verifiees dans le code source du client (client/config.go, lecture viper) :
+#   fichier absent = websockets desactives sans message d'erreur.
+# Redemarrer le client apres toute modification.
+
+EnableWebsockets: true
+AllowedWebsocketHosts:
+  - localhost
+  - 127.0.0.1
+  # Critere 2 (page hebergee) : ajouter l'hote GitHub Pages ici, hostname seul,
+  # sans https:// et sans port (le check du client compare le hostname de l'Origin) :
+  # - <utilisateur>.github.io

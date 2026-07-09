@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>City Buy List - Step 0 websocket gate</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; background: #10141a; color: #d7dde5;
+         font: 14px/1.45 Consolas, "Cascadia Mono", monospace; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h2 { font-size: 14px; margin: 0 0 8px; color: #8ab4f8; text-transform: uppercase; letter-spacing: .5px; }
+  .sub { color: #7a8494; margin-bottom: 14px; }
+  .panel { background: #171c24; border: 1px solid #262d38; border-radius: 8px;
+           padding: 12px 14px; margin-bottom: 14px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  input[type=text] { background: #0d1117; color: #d7dde5; border: 1px solid #30363d;
+           border-radius: 6px; padding: 6px 10px; min-width: 280px; font: inherit; }
+  button { background: #21313f; color: #d7dde5; border: 1px solid #33465a;
+           border-radius: 6px; padding: 6px 14px; font: inherit; cursor: pointer; }
+  button:hover { background: #2a3d4f; }
+  button.primary { background: #1f4d2e; border-color: #2f7a47; }
+  .chip { display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: bold; }
+  .chip.connecting { background: #4d3b12; color: #ffd97a; }
+  .chip.connected  { background: #14401f; color: #6fdd8b; }
+  .chip.closed     { background: #401414; color: #ff8f8f; }
+  .warn { background: #402a10; border: 1px solid #7a5220; color: #ffce87;
+          border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+  .err  { background: #401414; border: 1px solid #7a2020; color: #ffabab;
+          border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; }
+  table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  th, td { text-align: left; padding: 3px 10px 3px 0; border-bottom: 1px solid #222a34;
+           white-space: nowrap; }
+  th { color: #7a8494; font-weight: normal; }
+  .num { text-align: right; padding-right: 18px; }
+  .ok  { color: #6fdd8b; }
+  .bad { color: #ff8f8f; }
+  .dim { color: #7a8494; }
+  .stats span { margin-right: 18px; }
+  #rawlog { max-height: 320px; overflow: auto; background: #0d1117; border-radius: 6px;
+            padding: 8px; font-size: 12px; }
+  #rawlog div { border-bottom: 1px solid #1b222c; padding: 3px 0; word-break: break-all;
+                white-space: pre-wrap; }
+  .tablewrap { overflow-x: auto; }
+  code { background: #0d1117; padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+
+<h1>City Buy List : Step 0 websocket gate</h1>
+<div class="sub">Reads the local albiondata-client websocket feed. Read-only, nothing leaves this browser.</div>
+
+<div id="fileWarning" class="err" style="display:none">
+  This page was opened as a <b>file://</b> URL. The albiondata-client rejects the "null" Origin
+  this produces. Serve the page over http instead: run <code>serve.bat</code> (or
+  <code>python -m http.server 8000</code> in this folder), then open
+  <code>http://localhost:8000/test_ws.html</code>.
+</div>
+
+<div id="mixedWarning" class="warn" style="display:none">
+  This page is served over <b>https</b> and targets an unencrypted <b>ws://</b> endpoint.
+  Some browsers block this as mixed content. Whatever happens below is the criterion 2 result:
+  note the browser name, version and the exact error.
+</div>
+
+<div class="panel">
+  <div class="row">
+    <input type="text" id="wsUrl" value="ws://localhost:8099/ws" spellcheck="false">
+    <button id="btnConnect" class="primary">Connect</button>
+    <button id="btnDisconnect">Disconnect</button>
+    <label><input type="checkbox" id="autoReconnect" checked> auto-reconnect (3s)</label>
+    <span id="status" class="chip closed">DISCONNECTED</span>
+  </div>
+  <div style="margin-top:8px" class="dim">
+    Page origin: <code id="pageOrigin"></code>
+    <span id="lastEvent" style="margin-left:14px"></span>
+  </div>
+</div>
+
+<div class="panel stats">
+  <h2>Feed counters</h2>
+  <span>frames: <b id="cFrames">0</b></span>
+  <span>messages: <b id="cMsgs">0</b></span>
+  <span>parse errors: <b id="cErrs" class="ok">0</b></span>
+  <span>orders: <b id="cOrders">0</b></span>
+  <span>offers: <b id="cOffers">0</b></span>
+  <span>requests: <b id="cRequests">0</b></span>
+  <div style="margin-top:6px" class="dim">topics seen: <span id="topics">(none yet)</span></div>
+</div>
+
+<div class="panel">
+  <h2>Criterion 3 : price scale (last 12 offers)</h2>
+  <div class="dim" style="margin-bottom:6px">
+    Compare "if x10000" with the price shown on your game screen for the same item.
+    The x10000 scale stays a HYPOTHESIS until one row matches the screen.
+  </div>
+  <div class="tablewrap">
+  <table>
+    <thead><tr>
+      <th>time</th><th>ItemTypeId</th><th>Q</th><th>E</th>
+      <th class="num">UnitPriceSilver (raw)</th><th class="num">if x10000</th>
+      <th class="num">Amount</th><th>type</th><th>LocationId</th><th>mapped city</th>
+    </tr></thead>
+    <tbody id="offersBody"><tr><td colspan="10" class="dim">waiting for marketorders.ingest ...</td></tr></tbody>
+  </table>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Criterion 4 : LocationIds observed live</h2>
+  <div class="tablewrap">
+  <table>
+    <thead><tr><th>raw value</th><th>mapped name (ao-bin-dumps cluster table)</th><th class="num">orders seen</th></tr></thead>
+    <tbody id="locBody"><tr><td colspan="3" class="dim">waiting for orders ...</td></tr></tbody>
+  </table>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>Raw log (newest first, capped at 200)</h2>
+  <div class="row" style="margin-bottom:8px">
+    <button id="btnPause">Pause</button>
+    <button id="btnClear">Clear</button>
+    <button id="btnReport" class="primary">Copy gate report</button>
+    <span id="copyOk" class="ok" style="display:none">copied</span>
+  </div>
+  <div id="rawlog"></div>
+</div>
+
+<script>
+"use strict";
+
+// LocationId mapping, extracted 2026-07-09 from ao-data/ao-bin-dumps cluster/world.json.
+// Two id families exist in the game cluster table:
+//   city clusters (Thetford 0000, Caerleon 3003 ...) and
+//   market sub-clusters used by the AODP API (Thetford Market 0007, Caerleon Market 3005 ...).
+// The live feed fills LocationId from the player's current cluster
+// (albiondata-client operation_auction_get_offers.go), so both families are mapped here
+// and the live observation decides which one actually shows up.
+const LOCATIONS = {
+  0: "Thetford", 7: "Thetford Market", 301: "Thetford Portal",
+  1000: "Lymhurst", 1002: "Lymhurst Market", 1301: "Lymhurst Portal",
+  2000: "Bridgewatch", 2004: "Bridgewatch Market", 2301: "Bridgewatch Portal",
+  3003: "Caerleon", 3005: "Caerleon Market",
+  3004: "Martlock", 3008: "Martlock Market", 3301: "Martlock Portal",
+  4000: "Fort Sterling", 4002: "Fort Sterling Market", 4301: "Fort Sterling Portal",
+  5000: "Brecilien", 5001: "Brecilien (no furniture)", 5003: "Brecilien Market"
+};
+
+function mapLocation(raw) {
+  const s = String(raw == null ? "" : raw).trim();
+  if (s === "") return "(empty)";
+  if (s.includes("@")) return "Smugglers Den or Rest (raw id)";
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    return LOCATIONS[n] || "UNKNOWN id, report it";
+  }
+  return "UNKNOWN format, report it";
+}
+
+const $ = (id) => document.getElementById(id);
+const state = {
+  ws: null, wantOpen: false, attempts: 0, timer: null,
+  frames: 0, msgs: 0, errs: 0, orders: 0, offers: 0, requests: 0,
+  topics: {}, locs: {}, offerRows: [], firstConnectedAt: null, lastError: ""
+};
+
+$("pageOrigin").textContent = location.origin;
+if (location.protocol === "file:") $("fileWarning").style.display = "block";
+
+function setStatus(cls, text) {
+  const el = $("status");
+  el.className = "chip " + cls;
+  el.textContent = text;
+}
+
+function note(msg) { $("lastEvent").textContent = msg; }
+
+function logRaw(text, isErr) {
+  if (logRaw.paused) return;
+  const box = $("rawlog");
+  const div = document.createElement("div");
+  div.textContent = new Date().toLocaleTimeString() + "  " + text;
+  if (isErr) div.className = "bad";
+  box.prepend(div);
+  while (box.childNodes.length > 200) box.removeChild(box.lastChild);
+}
+logRaw.paused = false;
+
+function renderCounters() {
+  $("cFrames").textContent = state.frames;
+  $("cMsgs").textContent = state.msgs;
+  $("cErrs").textContent = state.errs;
+  $("cErrs").className = state.errs ? "bad" : "ok";
+  $("cOrders").textContent = state.orders;
+  $("cOffers").textContent = state.offers;
+  $("cRequests").textContent = state.requests;
+  const t = Object.entries(state.topics).map(([k, v]) => k + " (" + v + ")").join(", ");
+  $("topics").textContent = t || "(none yet)";
+}
+
+function renderOffers() {
+  const body = $("offersBody");
+  if (!state.offerRows.length) return;
+  body.innerHTML = "";
+  for (const r of state.offerRows) {
+    const tr = document.createElement("tr");
+    const scaled = (r.price / 10000).toLocaleString("en-US", { maximumFractionDigits: 2 });
+    const cells = [r.time, r.item, r.q, r.e, r.price.toLocaleString("en-US"), scaled,
+                   r.amount, r.type, r.loc, mapLocation(r.loc)];
+    cells.forEach((c, i) => {
+      const td = document.createElement("td");
+      td.textContent = c;
+      if (i === 4 || i === 5 || i === 6) td.className = "num";
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  }
+}
+
+function renderLocs() {
+  const body = $("locBody");
+  const keys = Object.keys(state.locs);
+  if (!keys.length) return;
+  body.innerHTML = "";
+  for (const k of keys.sort()) {
+    const tr = document.createElement("tr");
+    [k, mapLocation(k), state.locs[k]].forEach((c, i) => {
+      const td = document.createElement("td");
+      td.textContent = c;
+      if (i === 2) td.className = "num";
+      tr.appendChild(td);
+    });
+    body.appendChild(tr);
+  }
+}
+
+function handleOrder(o) {
+  state.orders++;
+  const type = String(o.AuctionType || "");
+  if (type === "offer") state.offers++;
+  if (type === "request") state.requests++;
+  const rawLoc = String(o.LocationId == null ? "" : o.LocationId);
+  state.locs[rawLoc] = (state.locs[rawLoc] || 0) + 1;
+  if (type === "offer") {
+    state.offerRows.unshift({
+      time: new Date().toLocaleTimeString(),
+      item: String(o.ItemTypeId || "?"),
+      q: o.QualityLevel, e: o.EnchantmentLevel,
+      price: Number(o.UnitPriceSilver) || 0,
+      amount: o.Amount, type: type, loc: rawLoc
+    });
+    if (state.offerRows.length > 12) state.offerRows.pop();
+  }
+}
+
+function handleMessage(text) {
+  state.msgs++;
+  let obj;
+  try { obj = JSON.parse(text); }
+  catch (e) {
+    state.errs++;
+    logRaw("PARSE ERROR: " + e.message + " | " + text.slice(0, 300), true);
+    return;
+  }
+  const topic = obj.topic || "(no topic)";
+  state.topics[topic] = (state.topics[topic] || 0) + 1;
+  if (topic === "marketorders.ingest" && obj.data && Array.isArray(obj.data.Orders)) {
+    for (const o of obj.data.Orders) handleOrder(o);
+    logRaw(topic + " | " + obj.data.Orders.length + " orders | " + text.slice(0, 400));
+  } else {
+    logRaw(topic + " | " + text.slice(0, 400));
+  }
+}
+
+function connect() {
+  const url = $("wsUrl").value.trim();
+  if (location.protocol === "https:" && url.startsWith("ws://"))
+    $("mixedWarning").style.display = "block";
+  state.wantOpen = true;
+  clearTimeout(state.timer);
+  let ws;
+  setStatus("connecting", "CONNECTING");
+  note("connecting to " + url + " (attempt " + (state.attempts + 1) + ")");
+  try { ws = new WebSocket(url); }
+  catch (e) {
+    // https page + ws:// target raises a SecurityError synchronously in some browsers:
+    // that outcome IS the criterion 2 measurement, so surface it verbatim.
+    state.lastError = e.name + ": " + e.message;
+    setStatus("closed", "BLOCKED BY BROWSER");
+    logRaw("WebSocket constructor threw: " + state.lastError, true);
+    return;
+  }
+  state.ws = ws;
+
+  ws.onopen = () => {
+    state.attempts = 0;
+    if (!state.firstConnectedAt) state.firstConnectedAt = new Date().toISOString();
+    setStatus("connected", "CONNECTED");
+    note("connected, waiting for market data (browse the market in game)");
+    logRaw("OPEN " + url);
+  };
+  ws.onmessage = (ev) => {
+    state.frames++;
+    // one websocket frame can carry several JSON messages separated by newlines
+    // (albiondata-client ws_client.go writePump)
+    for (const line of String(ev.data).split("\n")) {
+      if (line.trim()) handleMessage(line);
+    }
+    renderCounters(); renderOffers(); renderLocs();
+  };
+  ws.onerror = () => {
+    state.lastError = "websocket error event (see browser console for detail)";
+    logRaw("ERROR event on " + url, true);
+  };
+  ws.onclose = (ev) => {
+    setStatus("closed", "DISCONNECTED");
+    logRaw("CLOSE code=" + ev.code + " reason=" + (ev.reason || "(none)"));
+    state.ws = null;
+    if (state.wantOpen && $("autoReconnect").checked) {
+      state.attempts++;
+      note("retrying in 3s (attempt " + (state.attempts + 1) + "). Is albiondata-client running with EnableWebsockets: true?");
+      state.timer = setTimeout(connect, 3000);
+    }
+  };
+}
+
+function disconnect() {
+  state.wantOpen = false;
+  clearTimeout(state.timer);
+  if (state.ws) state.ws.close();
+  setStatus("closed", "DISCONNECTED");
+  note("disconnected by user");
+}
+
+function buildReport() {
+  const lines = [];
+  lines.push("CITY BUY LIST - STEP 0 GATE REPORT");
+  lines.push("generated: " + new Date().toISOString());
+  lines.push("user agent: " + navigator.userAgent);
+  lines.push("page origin: " + location.origin);
+  lines.push("ws target: " + $("wsUrl").value.trim());
+  lines.push("");
+  lines.push("[C1 connection] status=" + $("status").textContent
+    + " | first connected at=" + (state.firstConnectedAt || "never")
+    + " | frames=" + state.frames + " | messages=" + state.msgs
+    + " | parse errors=" + state.errs
+    + " | last error=" + (state.lastError || "(none)"));
+  lines.push("");
+  lines.push("[C3 price scale] last offers (raw UnitPriceSilver ; if x10000):");
+  if (!state.offerRows.length) lines.push("  (no offers received)");
+  for (const r of state.offerRows.slice(0, 5))
+    lines.push("  " + r.item + " Q" + r.q + " E" + r.e + " : raw=" + r.price
+      + " ; if_x10000=" + (r.price / 10000) + " ; amount=" + r.amount
+      + " ; loc=" + r.loc);
+  lines.push("");
+  lines.push("[C4 locations] distinct LocationIds observed:");
+  const keys = Object.keys(state.locs);
+  if (!keys.length) lines.push("  (none)");
+  for (const k of keys.sort())
+    lines.push("  raw=" + k + " ; mapped=" + mapLocation(k) + " ; orders=" + state.locs[k]);
+  lines.push("");
+  lines.push("[topics] " + (Object.entries(state.topics).map(([k, v]) => k + "=" + v).join(", ") || "(none)"));
+  return lines.join("\n");
+}
+
+$("btnConnect").addEventListener("click", () => { state.attempts = 0; connect(); });
+$("btnDisconnect").addEventListener("click", disconnect);
+$("btnPause").addEventListener("click", () => {
+  logRaw.paused = !logRaw.paused;
+  $("btnPause").textContent = logRaw.paused ? "Resume" : "Pause";
+});
+$("btnClear").addEventListener("click", () => { $("rawlog").innerHTML = ""; });
+$("btnReport").addEventListener("click", async () => {
+  const text = buildReport();
+  try { await navigator.clipboard.writeText(text); }
+  catch (e) {
+    const ta = document.createElement("textarea");
+    ta.value = text; document.body.appendChild(ta); ta.select();
+    document.execCommand("copy"); ta.remove();
+  }
+  $("copyOk").style.display = "inline";
+  setTimeout(() => { $("copyOk").style.display = "none"; }, 1500);
+});
+
+// connect on load unless opened as file:// (Origin null is rejected by the client anyway)
+if (location.protocol !== "file:") connect();
+</script>
+</body>
+</html>

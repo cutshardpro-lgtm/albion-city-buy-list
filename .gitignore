@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Pipeline cache (auto-generated, can be large)
+pipeline/.cache/
+.cache/
+
+# Internal ops docs
+GATE_CHECKLIST.md
